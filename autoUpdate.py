@@ -19,8 +19,8 @@ PipUpdateBaseCmd = ("pip", "install", "-U")
 PipOutputIgnoreCmd = ("grep", "-v", "up-to-date")
 
 home = os.getenv("HOME")
-BREWLOG = home + "/log/test_cronTaskBrewUpdate.log"
-PIPLOG = home + "/log/test_cronTaskPipUpdate.log"
+BREWLOG = home + "/log/cronTaskBrewUpdate.log"
+PIPLOG = home + "/log/cronTaskPipUpdate.log"
 
 
 def brew_update():
