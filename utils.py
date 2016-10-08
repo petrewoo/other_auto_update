@@ -28,7 +28,8 @@ class PidFile(object):
 class Fopen(object):
     """Just like with statement of open.
 
-    Remove file when exception occurs before end of block"""
+    Remove file when exception occurs before end of block
+    """
 
     def __init__(self, file_name, mode):
         self.file_name = file_name
@@ -48,10 +49,11 @@ class Fopen(object):
 
 
 class LockFile(object):
-    """Exclusvie instance for python script
+    """Exclusvie instance for python script.
 
     Lock file to guarantee only one instance of script
-    could be executed at same time"""
+    could be executed at same time
+    """
 
     _pid_file = PidFile()
 
