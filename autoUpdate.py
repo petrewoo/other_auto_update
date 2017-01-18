@@ -1,77 +1,180 @@
 #!/usr/bin/env python
 # -*- encoding: utf-8 -*-
 
-from subprocess import call, Popen, PIPE, STDOUT
-import datetime
+import logging
 import os
 import argparse
+import weakref
+import subprocess as sp
+from functools import wraps
+
 import pip
 
+import utils
+
+logger = logging.getLogger(__name__)
+
+
+def log(f):
+    @wraps(f)
+    def wapper():
+        with utils.LockFile(__file__):
+            logger.info('\n' + '=' * 30 + ' {} {:>6} '.format(
+                f.__name__, 'start') + '=' * 30)
+            f()
+            logger.info('\n' + '=' * 30 + ' {} {:>6} '.format(
+                f.__name__, 'end') + '=' * 30)
+
+    return wapper
+
+pip_update_cmd = '/usr/local/var/pyenv/shims/pip install -U'
+
+PipOutputIgnoreCmd = 'grep -v up-to-date'
+
+VimUpdateCmd = ''
 
 # TODO vim Plugin upate
-BrewUpdateCmdList = [("/usr/local/bin/brew", "update"),
-                     ("/bin/rm", "/usr/local/bin/vim"),
-                     ("/usr/local/bin/brew", "upgrade"),
-                     ("/bin/ln", "-sf", "/usr/local/bin/mvim",
-                      "/usr/local/bin/vim"),
-                     ("/usr/local/bin/brew", "cleanup")]
-PipUpdateBaseCmd = ("pip", "install", "-U")
-PipOutputIgnoreCmd = ("grep", "-v", "up-to-date")
-
-home = os.getenv("HOME")
-BREWLOG = home + "/log/cronTaskBrewUpdate.log"
-PIPLOG = home + "/log/cronTaskPipUpdate.log"
+# TODO logrotate
 
 
-def brew_update():
-    with open(BREWLOG, "a") as f:
-        _block_area(f)
-        _time_stamp(f)
-        for cmd in BrewUpdateCmdList:
-            call(cmd, stdout=f, stderr=f)
-        _block_area(f)
+class TargetMetaClass(type):
+
+    # TODO:wapper a new attr for read out of class
+    _obj_dict = weakref.WeakValueDictionary()
+    _log_dict = {}
+
+    def target_dict(self, key):
+        return self._obj_dict[key]
+
+    def __new__(cls, name, bases, attr):
+        raw_name = name.lower()
+        newcls = super(TargetMetaClass, cls).__new__(cls, name, bases, attr)
+        cls._obj_register(raw_name, newcls)
+        cls._log_register(raw_name)
+        return newcls
+
+    @classmethod
+    def _obj_register(cls, name, obj):
+        """Register subclass to dict."""
+
+        cls._obj_dict[name] = obj
+
+    @classmethod
+    def _log_register(cls, name):
+        log_file = cls._convert(name)
+        cls._log_dict[name] = log_file
+
+    @classmethod
+    def _convert(cls, cls_name):
+        """From class name generate a log file location."""
+
+        log_dir = os.getenv('HOME') + '/AutoUpdateLog'
+        if not os.path.exists(log_dir):
+            os.mkdir(log_dir, 0755)
+        log_file = log_dir + '/{}.log'.format(cls_name)
+
+        return log_file
+
+class TargetVC(object):
+
+    __metaclass__ = TargetMetaClass
+
+    def __init__(self):
+        self.location = TargetVC.locate_traget(self.__class__.__name__.lower())
+
+    @staticmethod
+    def locate_traget(target):
+        cmd = 'which' + ' ' + target
+        try:
+            re = sp.check_output(cmd.split())
+        except sp.CalledProcessError:
+            cmd = 'find /bin /sbin /usr/sbin /usr/local/bin /opt \
+                  /etc/opt /var/opt -executable -type f -name {} \
+                  | head -n 1'.format(target)
+            re = sp.check_output()
+            pass
+        return re
+        # 1.use call which target
+        # 2.use find target
+        # 3.else raise a error
+        # return
+
+    def update(self):
+        assert False, "Must override TargetVC.update() in derived class"
+
+    @staticmethod
+    def create(target):
+        try:
+            return TargetVC.target_dict(target)
+        except KeyError:
+            logger.warning('Target does not resigter, plz check out')
 
 
+class Brew(TargetVC):
+
+    cmd_list = ['update', 'upgrade', 'cleanup']
+
+    def update(self):
+        [sp.call((self.location + ' ' + cmd).split()) for cmd in self.cmd_list]
+
+
+class Pip(TargetVC):
+    """Class which used to update pip"""
+
+
+class Vim(TargetVC):
+    """Class which used to update vim"""
+
+
+@log
 def pip_update():
-    with open(PIPLOG, "a") as f:
-        _block_area(f)
-        _time_stamp(f)
-        _integrate_update(f)
-        reload(pip)
-        for dist in pip.get_installed_distributions():
-            _integrate_update(f, dist.project_name)
-        _block_area(f)
+    integrate_update()
+    reload(pip)
+    for dist in pip.get_installed_distributions():
+        integrate_update(dist.project_name)
 
 
-def _combine(cmd='pip'):
-    return PipUpdateBaseCmd + (cmd,)
-
-
-def _integrate_update(file, cmd='pip'):
-    new_cmd = PipUpdateBaseCmd + (cmd,)
-    p = Popen(new_cmd, stdout=PIPE, stderr=STDOUT)
-    call(PipOutputIgnoreCmd, stdin=p.stdout, stdout=file, stderr=file)
+def integrate_update(cmd='pip'):
+    new_cmd = pip_update_cmd + ' ' + cmd
+    sp.call(new_cmd.split(), stdout=file, stderr=file)
+    p = sp.Popen(new_cmd.split(), stdout=sp.PIPE, stderr=sp.PIPE)
+    sp.call(PipOutputIgnoreCmd.split(), stdin=p.stdout, stdout=file, stderr=file)
     p.wait()
 
 
-def _block_area(file):
-    file.write("*" * 80 + "\n")
-    file.flush()
+def main():
+    parser = argparse.ArgumentParser('Auto update script for tools')
+    parser.add_argument(
+        dest='updateName',
+        help='Please input what kind of tools you wanna update:\n \
+        brew/pip/vim')
+    parser.add_argument(
+        '-d', '--debug', action='store_true',
+        help='Open debug mode',
+        default=False)
 
+    args = parser.parse_args()
 
-def _time_stamp(file):
-    now = datetime.datetime.now()
-    file.write(now.strftime("%Y-%m-%d %H:%M:%S") + "\n")
-    file.flush()
+    if args.debug:
+        log_lvl = logging.DEBUG
+    else:
+        log_lvl = logging.INFO
+
+    try:
+        value = _functions[args.updateName]
+    except KeyError:
+        parser.print_help()
+        return False
+
+    logging.basicConfig(
+        level=log_lvl,
+        filename=value[1],
+        format='%(asctime)s %(levelname)s %(filename)s \
+                %(lineno)d %(message)s',
+        datefmt='%m/%d/%Y %I:%M:%S %p')
+
+    value[0]()
+
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('updateName', help='plz input your what kind of tools you wanna update, \
-                        1:bv(brew&vim) 2:pip')
-    args = parser.parse_args()
-    if args.updateName == 'bv':
-        brew_update()
-    elif args.updateName == 'pip':
-        pip_update()
-    else:
-        parser.print_help()
+    main()
