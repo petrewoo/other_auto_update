@@ -6,26 +6,12 @@ import os
 import argparse
 import weakref
 import subprocess as sp
-from functools import wraps
 
 import pip
 
-import utils
-
 logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.DEBUG)
 
-
-def log(f):
-    @wraps(f)
-    def wapper():
-        with utils.LockFile(__file__):
-            logger.info('\n' + '=' * 30 + ' {} {:>6} '.format(
-                f.__name__, 'start') + '=' * 30)
-            f()
-            logger.info('\n' + '=' * 30 + ' {} {:>6} '.format(
-                f.__name__, 'end') + '=' * 30)
-
-    return wapper
 
 pip_update_cmd = '/usr/local/var/pyenv/shims/pip install -U'
 
@@ -33,13 +19,14 @@ PipOutputIgnoreCmd = 'grep -v up-to-date'
 
 VimUpdateCmd = ''
 
+
 # TODO vim Plugin upate
 # TODO logrotate
 
 
 class TargetMetaClass(type):
 
-    # TODO:wapper a new attr for read out of class
+    # TODO: wrapper a new attr for read out of class
     _obj_dict = weakref.WeakValueDictionary()
     _log_dict = {}
 
@@ -47,6 +34,7 @@ class TargetMetaClass(type):
         return self._obj_dict[key]
 
     def __new__(cls, name, bases, attr):
+
         raw_name = name.lower()
         newcls = super(TargetMetaClass, cls).__new__(cls, name, bases, attr)
         cls._obj_register(raw_name, newcls)
@@ -75,6 +63,7 @@ class TargetMetaClass(type):
 
         return log_file
 
+
 class TargetVC(object):
 
     __metaclass__ = TargetMetaClass
@@ -100,7 +89,7 @@ class TargetVC(object):
         # return
 
     def update(self):
-        assert False, "Must override TargetVC.update() in derived class"
+        raise NotImplementedError
 
     @staticmethod
     def create(target):
@@ -112,10 +101,10 @@ class TargetVC(object):
 
 class Brew(TargetVC):
 
-    cmd_list = ['update', 'upgrade', 'cleanup']
+    _cmd_list = ('upgrade', 'cleanup')
 
     def update(self):
-        [sp.call((self.location + ' ' + cmd).split()) for cmd in self.cmd_list]
+        [sp.call((self.location + ' ' + cmd).split()) for cmd in self._cmd_list]
 
 
 class Pip(TargetVC):
@@ -126,7 +115,6 @@ class Vim(TargetVC):
     """Class which used to update vim"""
 
 
-@log
 def pip_update():
     integrate_update()
     reload(pip)
@@ -138,7 +126,11 @@ def integrate_update(cmd='pip'):
     new_cmd = pip_update_cmd + ' ' + cmd
     sp.call(new_cmd.split(), stdout=file, stderr=file)
     p = sp.Popen(new_cmd.split(), stdout=sp.PIPE, stderr=sp.PIPE)
-    sp.call(PipOutputIgnoreCmd.split(), stdin=p.stdout, stdout=file, stderr=file)
+    sp.call(
+        PipOutputIgnoreCmd.split(),
+        stdin=p.stdout,
+        stdout=file,
+        stderr=file)
     p.wait()
 
 
@@ -161,7 +153,8 @@ def main():
         log_lvl = logging.INFO
 
     try:
-        value = _functions[args.updateName]
+        pass
+        # value = _functions[args.updateName]
     except KeyError:
         parser.print_help()
         return False
